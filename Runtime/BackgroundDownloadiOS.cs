@@ -160,6 +160,9 @@ namespace Unity.Networking
 
         [DllImport("__Internal")]
         static extern int UnityBackgroundDownloadGetError(IntPtr backend, [MarshalAs(UnmanagedType.LPArray)] byte[] buffer);
+        
+        [DllImport("__Internal")]
+        static extern long UnityBackgroundDownloadGetBytesDownloaded(IntPtr backend);
     }
 
 }
