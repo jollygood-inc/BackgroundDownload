@@ -86,6 +86,15 @@ namespace Unity.Networking
             return UnityBackgroundDownloadGetProgress(_backend);
         }
 
+        protected override long GetBytesDownloaded()
+        {
+            if (_backend == IntPtr.Zero)
+                return -1;
+            if (_status != BackgroundDownloadStatus.Downloading)
+                return -1;
+            return UnityBackgroundDownloadGetBytesDownloaded(_backend);
+        }
+
         public override void Dispose()
         {
             if (_backend != IntPtr.Zero)
@@ -151,6 +160,9 @@ namespace Unity.Networking
 
         [DllImport("__Internal")]
         static extern int UnityBackgroundDownloadGetError(IntPtr backend, [MarshalAs(UnmanagedType.LPArray)] byte[] buffer);
+        
+        [DllImport("__Internal")]
+        static extern long UnityBackgroundDownloadGetBytesDownloaded(IntPtr backend);
     }
 
 }

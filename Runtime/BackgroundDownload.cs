@@ -229,8 +229,16 @@ namespace Unity.Networking
         /// </summary>
         public float progress { get { return GetProgress(); } }
 
+        /// <summary>
+        /// The number of bytes that have been downloaded so far. Returns 0 if unknown.
+        /// </summary>
+		public long downloadedBytes { get { return GetBytesDownloaded(); } }
+
         /// <summary>For internal use.</summary>
         protected abstract float GetProgress();
+
+		/// <summary>For internal use.</summary>
+		protected abstract long GetBytesDownloaded();
 
         /// <summary>
         /// Disposes of this download, aborts the download if still in progress.

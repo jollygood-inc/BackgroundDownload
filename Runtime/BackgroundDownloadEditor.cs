@@ -106,6 +106,13 @@ namespace Unity.Networking
             return _operation.progress;
         }
 
+        protected override long GetBytesDownloaded()
+        {
+            if (_status == BackgroundDownloadStatus.Failed) return -1;
+            if (_request == null) return 0;
+            return (long)_request.downloadedBytes;
+        }
+
         public override void Dispose()
         {
             if (_disposed) return;

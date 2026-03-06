@@ -192,6 +192,11 @@ namespace Unity.Networking
             return _download.Call<float>("getProgress");
         }
 
+        protected override long GetBytesDownloaded()
+        {
+            return _download.Call<long>("getBytesDownloaded");
+        }
+
         public override void Dispose()
         {
             RemoveDownload();

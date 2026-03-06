@@ -122,6 +122,38 @@ public class BackgroundDownload {
             return ret;
         return 1.0f;
     }
+    
+    public long getBytesDownloaded() {
+        // エラーが発生している場合は-1を返す
+        if (error != null)
+            return -1;
+        // ダウンロード完了済みの場合はURIから確認
+        Uri uri = manager.getUriForDownloadedFile(id);
+        if (uri != null) {
+            // 完了済みの場合は合計サイズを返すためクエリを実行
+            DownloadManager.Query query = new DownloadManager.Query();
+            query.setFilterById(id);
+            Cursor cursor = manager.query(query);
+            if (cursor.getCount() == 0)
+                return -1;
+            cursor.moveToFirst();
+            long total = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
+            cursor.close();
+            return total;
+        }
+        // ダウンロード中の場合は現在のダウンロード済みバイト数を返す
+        DownloadManager.Query query = new DownloadManager.Query();
+        query.setFilterById(id);
+        Cursor cursor = manager.query(query);
+        if (cursor.getCount() == 0) {
+            error = "Background download not found";
+            return -1;
+        }
+        cursor.moveToFirst();
+        long downloaded = cursor.getLong(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+        cursor.close();
+        return downloaded;
+    }
 
     public String getDownloadUrl() {
         return downloadUri.toString();

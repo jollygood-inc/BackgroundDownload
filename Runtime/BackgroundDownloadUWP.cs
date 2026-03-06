@@ -153,6 +153,17 @@ namespace Unity.Networking
             return 0.0f;
         }
 
+        protected override long GetBytesDownloaded()
+        {
+#if ENABLE_WINMD_SUPPORT
+            if (_download != null)
+            {
+                return (long)_download.Progress.BytesReceived;
+            }
+#endif
+            return 0L;
+        }
+
 #if ENABLE_WINMD_SUPPORT
         public override void Dispose()
         {
