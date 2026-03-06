@@ -331,3 +331,12 @@ extern "C" void UnityBackgroundDownloadDestroy(void* download)
     UnityBackgroundDownloadDelegate* delegate = (UnityBackgroundDownloadDelegate*)session.delegate;
     [delegate removeTask: task];
 }
+
+extern "C" int64_t UnityBackgroundDownloadGetBytesDownloaded(void* download)
+{
+    NSURLSessionDownloadTask* task = (__bridge NSURLSessionDownloadTask*)download;
+    // ダウンロード済みバイト数を返す（未開始または情報が不明な場合は-1）
+    if (task == nil)
+        return -1;
+    return (int64_t)task.countOfBytesReceived;
+}
