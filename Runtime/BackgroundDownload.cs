@@ -6,7 +6,7 @@ using UnityEngine;
 #if UNITY_EDITOR
 using BackgroundDownloadimpl = Unity.Networking.BackgroundDownloadEditor;
 #elif UNITY_ANDROID
-using BackgroundDownloadimpl = Unity.Networking.BackgroundDownloadAndroid;
+using BackgroundDownloadimpl = Unity.Networking.BackgroundDownloadAndroidOkHttp;
 #elif UNITY_IOS
 using BackgroundDownloadimpl = Unity.Networking.BackgroundDownloadiOS;
 #elif UNITY_WSA_10_0
