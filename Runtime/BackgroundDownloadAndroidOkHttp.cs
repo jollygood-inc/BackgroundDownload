@@ -1,4 +1,4 @@
-#if UNITY_ANDROID
+#if true//UNITY_ANDROID
 
 using System;
 using System.Collections.Generic;
@@ -242,10 +242,38 @@ namespace Unity.Networking
                         string filePath = _tempFilePath.Substring(0, _tempFilePath.Length - TEMP_FILE_SUFFIX.Length);
                         if (File.Exists(_tempFilePath))
                         {
-                            if (File.Exists(filePath))
-                                File.Delete(filePath);
-                            File.Move(_tempFilePath, filePath);
+                            try
+                            {
+                                if (File.Exists(filePath))
+                                    File.Delete(filePath);
+                                File.Move(_tempFilePath, filePath);
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.LogError(string.Format("Failed to move downloaded file from '{0}' to '{1}': {2}", _tempFilePath, filePath, e.Message));
+                                _status = BackgroundDownloadStatus.Failed;
+                                _error = e.Message;
+                                return;
+                            }
                         }
+                        else if (!File.Exists(filePath))
+                        {
+                            // Neither the temp file nor the final file exists.
+                            // Ask the Java layer for the actual destination URI and check that.
+                            Debug.LogWarning(string.Format("BackgroundDownloadAndroidOkHttp: temp file not found at '{0}'. Checking Java-side destination.", _tempFilePath));
+                            string destUri = _download.Call<string>("getDestinationUri");
+                            if (destUri != null && destUri.StartsWith("file://"))
+                                destUri = destUri.Substring(7);
+                            if (destUri == null || !File.Exists(destUri))
+                            {
+                                Debug.LogError(string.Format("BackgroundDownloadAndroidOkHttp: downloaded file not found at '{0}' or '{1}'.", _tempFilePath, filePath));
+                                _status = BackgroundDownloadStatus.Failed;
+                                _error = "Downloaded file not found after completion.";
+                                return;
+                            }
+                            // else: Java already moved the file to destUri — treat as success.
+                        }
+                        // else: temp file not present but final file already exists — already moved.
                     }
 
                     _status = BackgroundDownloadStatus.Done;
