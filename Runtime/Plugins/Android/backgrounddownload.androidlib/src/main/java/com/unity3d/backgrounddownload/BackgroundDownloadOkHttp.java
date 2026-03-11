@@ -312,4 +312,3 @@ public class BackgroundDownloadOkHttp {
         return error;
     }
 }
-}
