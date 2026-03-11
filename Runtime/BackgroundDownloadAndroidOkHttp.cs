@@ -306,18 +306,31 @@ namespace Unity.Networking
                 {
                     string filePath = _tempFilePath.Substring(0, _tempFilePath.Length - TEMP_FILE_SUFFIX.Length);
 
+
+                    bool finalized = false;
+
                     if (File.Exists(_tempFilePath))
                     {
-                        try
+                        for (int i = 0; i < 10; i++)
                         {
-                             File.Copy(_tempFilePath, filePath, true);
-                             File.Delete(_tempFilePath);
+                            try
+                            {
+                                File.Copy(_tempFilePath, filePath, true);
+                                File.Delete(_tempFilePath);
+                                finalized = true;
+                                break;
+                            }
+                            catch (IOException)
+                            {
+                                System.Threading.Thread.Sleep(50);
+                            }
                         }
-                        catch (Exception e)
+
+                        if (!finalized)
                         {
-                            Debug.LogError($"Failed to move downloaded file from '{_tempFilePath}' to '{filePath}': {e.Message}");
+                            Debug.LogError($"Failed to finalize download after retries. temp={_tempFilePath} final={filePath}");
                             _status = BackgroundDownloadStatus.Failed;
-                            _error = e.Message;
+                            _error = "File finalize failed";
                             return;
                         }
                     }
@@ -533,3 +546,4 @@ namespace Unity.Networking
 }
 
 #endif
+
