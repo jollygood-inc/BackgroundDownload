@@ -315,6 +315,22 @@ namespace Unity.Networking
                         {
                             try
                             {
+                                // temp が無ければ、既に別プロセスで完了している可能性がある
+                                if (!File.Exists(_tempFilePath))
+                                {
+                                    if (File.Exists(filePath))
+                                    {
+                                        // 既に完成済み
+                                        finalized = true;
+                                        break;
+                                    }
+
+                                    Debug.LogError($"Temp file missing and final file not found. temp={_tempFilePath} final={filePath}");
+                                    _status = BackgroundDownloadStatus.Failed;
+                                    _error = "Downloaded file missing";
+                                    return;
+                                }
+
                                 File.Copy(_tempFilePath, filePath, true);
                                 File.Delete(_tempFilePath);
                                 finalized = true;
@@ -322,7 +338,7 @@ namespace Unity.Networking
                             }
                             catch (IOException e)
                             {
-                                Debug.LogWarning($"Retry move/copy attempt {i + 1}/10 : {e.Message}");
+                                Debug.LogWarning($"Retry finalize attempt {i + 1}/10 : {e.Message}");
                                 System.Threading.Thread.Sleep(50);
                             }
                         }
