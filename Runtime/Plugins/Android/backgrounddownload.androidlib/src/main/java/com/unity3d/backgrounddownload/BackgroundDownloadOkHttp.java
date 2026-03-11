@@ -250,6 +250,9 @@ public class BackgroundDownloadOkHttp {
                     parent.mkdirs();
                 }
 
+                // Write to the destination path directly (the C# layer supplies a .part
+                // temp path and renames it to the final path after checkFinished() returns 1).
+                boolean writeSuccess = false;
                 try (InputStream in = body.byteStream();
                      FileOutputStream out = new FileOutputStream(destFile)) {
                     byte[] buffer = new byte[8192];
@@ -258,13 +261,21 @@ public class BackgroundDownloadOkHttp {
                         out.write(buffer, 0, read);
                         downloadedSoFar.addAndGet(read);
                     }
-                    status = STATUS_SUCCESS;
+                    // Flush and sync before the stream is closed so all bytes are on disk.
+                    out.flush();
+                    out.getFD().sync();
+                    writeSuccess = true;
                 } catch (IOException e) {
                     error  = e.getMessage() != null ? e.getMessage() : "File write error";
                     status = STATUS_FAILED;
-                } finally {
-                    notifyCompletion();
                 }
+                // Set SUCCESS only after the FileOutputStream is fully closed (try-with-resources
+                // calls close() at the end of the try block, before this line is reached).
+                // This guarantees that File.Move() on the .part file in the C# layer will succeed.
+                if (writeSuccess) {
+                    status = STATUS_SUCCESS;
+                }
+                notifyCompletion();
             }
         });
 
