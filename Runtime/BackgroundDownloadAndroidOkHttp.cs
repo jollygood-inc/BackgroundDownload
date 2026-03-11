@@ -320,7 +320,7 @@ namespace Unity.Networking
                                 finalized = true;
                                 break;
                             }
-                            catch (IOException)
+                            catch (IOException e)
                             {
                                 Debug.LogWarning($"Retry move/copy attempt {i + 1}/10 : {e.Message}");
                                 System.Threading.Thread.Sleep(50);
