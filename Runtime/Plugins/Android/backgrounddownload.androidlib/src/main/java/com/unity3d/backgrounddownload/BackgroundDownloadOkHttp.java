@@ -85,6 +85,27 @@ public class BackgroundDownloadOkHttp {
     private volatile Call activeCall = null;
 
     // -------------------------------------------------------------------------
+    // Completion callback (set by C# layer via CompletionReceiver)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Notifies the C# layer that at least one download has finished.
+     * Called on the OkHttp dispatcher thread after each successful or failed download.
+     * Mirrors the role of {@code DownloadManager.ACTION_DOWNLOAD_COMPLETE} broadcast.
+     */
+    private static volatile CompletionReceiver.Callback completionCallback = null;
+
+    /**
+     * Registers the callback that will be invoked whenever any download finishes.
+     * Should be called by the C# layer immediately after creating the first download.
+     *
+     * @param callback The callback to invoke on download completion.
+     */
+    public static void setCompletionCallback(CompletionReceiver.Callback callback) {
+        completionCallback = callback;
+    }
+
+    // -------------------------------------------------------------------------
     // Factory methods
     // -------------------------------------------------------------------------
 
@@ -185,7 +206,12 @@ public class BackgroundDownloadOkHttp {
         Request request = builder.build();
 
         activeCall = sharedClient.newCall(request);
-        final File destFile = new File(destinationUri.getPath());
+
+        // Uri.getPath() returns null for file:// URIs on some Android versions.
+        // Strip the "file://" scheme manually to get a reliable absolute path.
+        String uriStr = destinationUri.toString();
+        final String destPath = uriStr.startsWith("file://") ? uriStr.substring(7) : uriStr;
+        final File destFile = new File(destPath);
 
         activeCall.enqueue(new Callback() {
             @Override
@@ -193,6 +219,7 @@ public class BackgroundDownloadOkHttp {
                 if (!call.isCanceled()) {
                     error  = e.getMessage() != null ? e.getMessage() : "Network failure";
                     status = STATUS_FAILED;
+                    notifyCompletion();
                 }
             }
 
@@ -202,6 +229,7 @@ public class BackgroundDownloadOkHttp {
                     error  = "HTTP error: " + response.code();
                     status = STATUS_FAILED;
                     response.close();
+                    notifyCompletion();
                     return;
                 }
 
@@ -209,6 +237,7 @@ public class BackgroundDownloadOkHttp {
                 if (body == null) {
                     error  = "Empty response body";
                     status = STATUS_FAILED;
+                    notifyCompletion();
                     return;
                 }
 
@@ -233,11 +262,30 @@ public class BackgroundDownloadOkHttp {
                 } catch (IOException e) {
                     error  = e.getMessage() != null ? e.getMessage() : "File write error";
                     status = STATUS_FAILED;
+                } finally {
+                    notifyCompletion();
                 }
             }
         });
 
         return id;
+    }
+
+    /**
+     * Invokes the registered {@link CompletionReceiver.Callback} to notify the C# layer
+     * that this download has finished (successfully or with an error).
+     * Safe to call from any thread.
+     */
+    private void notifyCompletion() {
+        CompletionReceiver.Callback cb = completionCallback;
+        if (cb != null) {
+            try {
+                cb.downloadCompleted();
+            } catch (Exception e) {
+                // C# side may have been destroyed; ignore.
+                completionCallback = null;
+            }
+        }
     }
 
     /**

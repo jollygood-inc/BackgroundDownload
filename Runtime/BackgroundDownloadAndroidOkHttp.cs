@@ -61,8 +61,12 @@ namespace Unity.Networking
             if (_finishedCallback == null)
             {
                 _finishedCallback = new Callback();
+                // Register with CompletionReceiver for DownloadManager broadcast compatibility.
                 var receiver = new AndroidJavaClass("com.unity3d.backgrounddownload.CompletionReceiver");
                 receiver.CallStatic("setCallback", _finishedCallback);
+                // Also register directly with BackgroundDownloadOkHttp so OkHttp completions
+                // trigger CheckFinished() without relying on the DownloadManager broadcast.
+                _backgroundDownloadClass.CallStatic("setCompletionCallback", _finishedCallback);
             }
             if (_playerClass == null)
                 _playerClass = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
@@ -193,6 +197,9 @@ namespace Unity.Networking
         string QueryDestinationPath(out string tempFilePath)
         {
             string uri = _download.Call<string>("getDestinationUri");
+            // Strip "file://" prefix so that IndexOf(basePath) works correctly.
+            if (uri.StartsWith("file://"))
+                uri = uri.Substring(7);
             string basePath = Application.persistentDataPath;
             var pos = uri.IndexOf(basePath);
             tempFilePath = uri.Substring(pos);
@@ -264,16 +271,27 @@ namespace Unity.Networking
         /// <summary>
         /// Returns <c>true</c> while the download is still in progress, allowing
         /// this object to be yielded inside a coroutine.
+        /// Also polls the Java layer for completion status on every call so that
+        /// the download finishes even if the CompletionReceiver callback is missed.
         /// </summary>
-        public override bool keepWaiting { get { return _status == BackgroundDownloadStatus.Downloading; } }
+        public override bool keepWaiting
+        {
+            get
+            {
+                CheckFinished();
+                return _status == BackgroundDownloadStatus.Downloading;
+            }
+        }
 
         /// <summary>
         /// Returns the download progress in the range [0, 1].
         /// Returns a negative value when the total size is not yet known.
-        /// Delegates to the Java layer which tracks bytes written via OkHttp.
+        /// Also polls the Java layer for completion so status stays current
+        /// even when called outside a coroutine.
         /// </summary>
         protected override float GetProgress()
         {
+            CheckFinished();
             return _download.Call<float>("getProgress");
         }
 
@@ -282,9 +300,12 @@ namespace Unity.Networking
         /// Delegates to <c>BackgroundDownloadOkHttp.getBytesDownloaded()</c> which
         /// uses an <c>AtomicLong</c> updated on every OkHttp response body read.
         /// Returns <c>-1</c> if the download has failed, <c>0</c> if not yet started.
+        /// Also polls the Java layer for completion so status stays current
+        /// even when called outside a coroutine.
         /// </summary>
         protected override long GetBytesDownloaded()
         {
+            CheckFinished();
             return _download.Call<long>("getBytesDownloaded");
         }
 
