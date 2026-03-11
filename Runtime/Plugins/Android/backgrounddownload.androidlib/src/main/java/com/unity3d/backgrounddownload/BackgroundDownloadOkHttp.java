@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import okhttp3.Call;
@@ -46,7 +47,13 @@ public class BackgroundDownloadOkHttp {
     // Static shared state
     // -------------------------------------------------------------------------
 
-    private static final OkHttpClient sharedClient = new OkHttpClient();
+    private static final OkHttpClient sharedClient = new OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS) // no overall deadline
+            .retryOnConnectionFailure(true)
+            .build();
     private static final ExecutorService executor = Executors.newCachedThreadPool();
 
     private static final Map<Long, BackgroundDownloadOkHttp> registry = new HashMap<>();
@@ -185,40 +192,42 @@ public class BackgroundDownloadOkHttp {
                     return;
                 }
 
-                ResponseBody body = response.body();
-                if (body == null) {
-                    error  = "Empty response body";
-                    status = STATUS_FAILED;
-                    Log.e(TAG, "download body null. id=" + id);
-                    notifyCompletion();
-                    return;
-                }
-
-                totalBytes.set(body.contentLength());
-
-                File parent = destFile.getParentFile();
-                if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
-                    error  = "Failed to create parent directory: " + parent.getAbsolutePath();
-                    status = STATUS_FAILED;
-                    Log.e(TAG, "mkdirs failed. id=" + id + ", dir=" + parent.getAbsolutePath());
-                    notifyCompletion();
-                    return;
-                }
-
                 boolean writeSuccess = false;
-                try (InputStream in = body.byteStream();
-                     FileOutputStream out = new FileOutputStream(destFile)) {
-
-                    byte[] buffer = new byte[8192];
-                    int read;
-                    while ((read = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, read);
-                        downloadedSoFar.addAndGet(read);
+                long total = -1;
+                try (ResponseBody body = response.body()) {
+                    if (body == null) {
+                        error  = "Empty response body";
+                        status = STATUS_FAILED;
+                        Log.e(TAG, "download body null. id=" + id);
+                        notifyCompletion();
+                        return;
                     }
-                    out.flush();
-                    out.getFD().sync();
-                    writeSuccess = true;
 
+                    total = body.contentLength();
+                    totalBytes.set(total);
+
+                    File parent = destFile.getParentFile();
+                    if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
+                        error  = "Failed to create parent directory: " + parent.getAbsolutePath();
+                        status = STATUS_FAILED;
+                        Log.e(TAG, "mkdirs failed. id=" + id + ", dir=" + parent.getAbsolutePath());
+                        notifyCompletion();
+                        return;
+                    }
+
+                    try (InputStream in = body.byteStream();
+                         FileOutputStream out = new FileOutputStream(destFile)) {
+
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                            downloadedSoFar.addAndGet(read);
+                        }
+                        out.flush();
+                        out.getFD().sync();
+                        writeSuccess = true;
+                    }
                 } catch (IOException e) {
                     error  = e.getMessage() != null ? e.getMessage() : "File write error";
                     status = STATUS_FAILED;
@@ -226,11 +235,25 @@ public class BackgroundDownloadOkHttp {
                 }
 
                 if (writeSuccess) {
-                    status = STATUS_SUCCESS;
-                    Log.d(TAG, "download success. id=" + id
-                            + ", exists=" + destFile.exists()
-                            + ", length=" + (destFile.exists() ? destFile.length() : -1)
-                            + ", path=" + destFile.getAbsolutePath());
+                    // If content length is known, ensure we wrote the full payload.
+                    if (total >= 0 && downloadedSoFar.get() != total) {
+                        error  = "Downloaded size mismatch: expected " + total + " got " + downloadedSoFar.get();
+                        status = STATUS_FAILED;
+                        Log.e(TAG, "size mismatch. id=" + id + ", expected=" + total + ", got=" + downloadedSoFar.get());
+                        // Clean up partial file to allow retry.
+                        //noinspection ResultOfMethodCallIgnored
+                        destFile.delete();
+                    } else {
+                        status = STATUS_SUCCESS;
+                        Log.d(TAG, "download success. id=" + id
+                                + ", exists=" + destFile.exists()
+                                + ", length=" + (destFile.exists() ? destFile.length() : -1)
+                                + ", path=" + destFile.getAbsolutePath());
+                    }
+                } else {
+                    // Clean up partial file on failure.
+                    //noinspection ResultOfMethodCallIgnored
+                    destFile.delete();
                 }
 
                 notifyCompletion();
@@ -312,3 +335,4 @@ public class BackgroundDownloadOkHttp {
         return error;
     }
 }
+
