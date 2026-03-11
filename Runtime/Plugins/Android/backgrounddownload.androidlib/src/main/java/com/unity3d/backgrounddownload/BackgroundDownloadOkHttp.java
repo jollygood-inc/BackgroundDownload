@@ -32,7 +32,7 @@ import okhttp3.ConnectionPool;
  */
 public class BackgroundDownloadOkHttp {
 
-    private static final String TAG = "BackgroundDownloadOkHttp";
+    private static final String TAG = "BackgroundDownloadOkHttpJava";
 
     // -------------------------------------------------------------------------
     // Status constants (mirrors DownloadManager semantics)
