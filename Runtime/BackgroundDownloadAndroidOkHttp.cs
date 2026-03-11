@@ -58,16 +58,20 @@ namespace Unity.Networking
         {
             if (_backgroundDownloadClass == null)
                 _backgroundDownloadClass = new AndroidJavaClass("com.unity3d.backgrounddownload.BackgroundDownloadOkHttp");
+
             if (_finishedCallback == null)
             {
                 _finishedCallback = new Callback();
+
                 // Register with CompletionReceiver for DownloadManager broadcast compatibility.
                 var receiver = new AndroidJavaClass("com.unity3d.backgrounddownload.CompletionReceiver");
                 receiver.CallStatic("setCallback", _finishedCallback);
+
                 // Also register directly with BackgroundDownloadOkHttp so OkHttp completions
                 // trigger CheckFinished() without relying on the DownloadManager broadcast.
                 _backgroundDownloadClass.CallStatic("setCompletionCallback", _finishedCallback);
             }
+
             if (_playerClass == null)
                 _playerClass = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
         }
@@ -90,45 +94,69 @@ namespace Unity.Networking
             string filePath = Path.Combine(Application.persistentDataPath, config.filePath);
             _tempFilePath = filePath + TEMP_FILE_SUFFIX;
 
-            if (File.Exists(filePath))
-                File.Delete(filePath);
-            if (File.Exists(_tempFilePath))
-                File.Delete(_tempFilePath);
-
-            var dir = Path.GetDirectoryName(filePath);
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-           
-
-            string fileUri = "file://" + _tempFilePath;
-
-            bool allowMetered = false;
-            bool allowRoaming = false;
-            switch (_config.policy)
+            try
             {
-                case BackgroundDownloadPolicy.AllowMetered:
-                    allowMetered = true;
-                    break;
-                case BackgroundDownloadPolicy.AlwaysAllow:
-                    allowMetered = true;
-                    allowRoaming = true;
-                    break;
-                default:
-                    break;
-            }
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+                if (File.Exists(_tempFilePath))
+                    File.Delete(_tempFilePath);
 
-            _download = _backgroundDownloadClass.CallStatic<AndroidJavaObject>("create", config.url.AbsoluteUri, fileUri);
-            _download.Call("setAllowMetered", allowMetered);
-            _download.Call("setAllowRoaming", allowRoaming);
+                var dir = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
 
-            if (config.requestHeaders != null)
-                foreach (var header in config.requestHeaders)
-                    if (header.Value != null)
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Debug.Log($"[BackgroundDownloadAndroidOkHttp] Ensure directory: {dir}, exists={Directory.Exists(dir)}");
+                }
+
+                // IMPORTANT:
+                // Build file URI safely. Using Uri.AbsoluteUri avoids malformed "file://" prefixes.
+                string normalizedTempPath = _tempFilePath.Replace("\\", "/");
+                string fileUri = new Uri(normalizedTempPath).AbsoluteUri; // -> file:///...
+
+                bool allowMetered = false;
+                bool allowRoaming = false;
+                switch (_config.policy)
+                {
+                    case BackgroundDownloadPolicy.AllowMetered:
+                        allowMetered = true;
+                        break;
+                    case BackgroundDownloadPolicy.AlwaysAllow:
+                        allowMetered = true;
+                        allowRoaming = true;
+                        break;
+                    default:
+                        break;
+                }
+
+                _download = _backgroundDownloadClass.CallStatic<AndroidJavaObject>("create", config.url.AbsoluteUri, fileUri);
+                _download.Call("setAllowMetered", allowMetered);
+                _download.Call("setAllowRoaming", allowRoaming);
+
+                if (config.requestHeaders != null)
+                {
+                    foreach (var header in config.requestHeaders)
+                    {
+                        if (header.Value == null)
+                            continue;
+
                         foreach (var val in header.Value)
                             _download.Call("addRequestHeader", header.Key, val);
+                    }
+                }
 
-            var activity = _playerClass.GetStatic<AndroidJavaObject>("currentActivity");
-            _id = _download.Call<long>("start", activity);
+                var activity = _playerClass.GetStatic<AndroidJavaObject>("currentActivity");
+                _id = _download.Call<long>("start", activity);
+
+                Debug.Log($"[BackgroundDownloadAndroidOkHttp] start id={_id}, url={config.url.AbsoluteUri}, temp={_tempFilePath}, fileUri={fileUri}");
+            }
+            catch (Exception e)
+            {
+                _status = BackgroundDownloadStatus.Failed;
+                _error = $"Failed to start download: {e.Message}";
+                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] {_error}\n{e}");
+            }
         }
 
         /// <summary>
@@ -171,7 +199,7 @@ namespace Unity.Networking
             }
             catch (Exception e)
             {
-                Debug.LogError(string.Format("Failed to recreate background download with id {0}: {1}", id, e.Message));
+                Debug.LogError($"Failed to recreate background download with id {id}: {e.Message}");
             }
 
             return null;
@@ -195,24 +223,47 @@ namespace Unity.Networking
         /// <returns>The relative destination path (key used in <c>_downloads</c>).</returns>
         string QueryDestinationPath(out string tempFilePath)
         {
-            string uri = _download.Call<string>("getDestinationUri");
-            // Strip "file://" prefix so that IndexOf(basePath) works correctly.
-            if (uri.StartsWith("file://"))
-                uri = uri.Substring(7);
-            string basePath = Application.persistentDataPath;
-            var pos = uri.IndexOf(basePath);
-            tempFilePath = uri.Substring(pos);
-            pos += basePath.Length;
-            if (uri[pos] == '/')
-                ++pos;
-            var suffixPos = uri.LastIndexOf(TEMP_FILE_SUFFIX);
-            if (suffixPos > 0)
+            string destination = _download.Call<string>("getDestinationUri");
+            string localPath = destination;
+
+            // Robust URI -> local path conversion
+            if (!string.IsNullOrEmpty(destination) && destination.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
             {
-                var length = suffixPos - pos;
-                return uri.Substring(pos, length);
+                try
+                {
+                    localPath = new Uri(destination).LocalPath;
+                }
+                catch
+                {
+                    localPath = destination.Replace("file://", "");
+                }
             }
 
-            return uri.Substring(pos);
+            localPath = localPath.Replace("\\", "/");
+            string basePath = Application.persistentDataPath.Replace("\\", "/");
+
+            int pos = localPath.IndexOf(basePath, StringComparison.Ordinal);
+            if (pos < 0)
+            {
+                // Fallback: unknown layout, return basename-ish path.
+                tempFilePath = localPath;
+                string fileName = Path.GetFileName(localPath);
+                if (fileName.EndsWith(TEMP_FILE_SUFFIX, StringComparison.Ordinal))
+                    return fileName.Substring(0, fileName.Length - TEMP_FILE_SUFFIX.Length);
+                return fileName;
+            }
+
+            tempFilePath = localPath;
+            pos += basePath.Length;
+
+            if (pos < localPath.Length && localPath[pos] == '/')
+                ++pos;
+
+            int suffixPos = localPath.LastIndexOf(TEMP_FILE_SUFFIX, StringComparison.Ordinal);
+            if (suffixPos > pos)
+                return localPath.Substring(pos, suffixPos - pos);
+
+            return localPath.Substring(pos);
         }
 
         /// <summary>
@@ -221,7 +272,14 @@ namespace Unity.Networking
         /// <returns>Human-readable error string, or <c>null</c> if no error.</returns>
         string GetError()
         {
-            return _download.Call<string>("getError");
+            try
+            {
+                return _download.Call<string>("getError");
+            }
+            catch (Exception e)
+            {
+                return $"Failed to get Java error: {e.Message}";
+            }
         }
 
         /// <summary>
@@ -231,64 +289,112 @@ namespace Unity.Networking
         /// </summary>
         void CheckFinished()
         {
-            if (_status == BackgroundDownloadStatus.Downloading)
+            if (_status != BackgroundDownloadStatus.Downloading || _download == null)
+                return;
+
+            int status;
+            try
             {
-                int status = _download.Call<int>("checkFinished");
-                if (status == 1)
+                status = _download.Call<int>("checkFinished");
+            }
+            catch (Exception e)
+            {
+                _status = BackgroundDownloadStatus.Failed;
+                _error = $"checkFinished exception: {e.Message}";
+                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] {_error}\n{e}");
+                return;
+            }
+
+            if (status == 1)
+            {
+                if (!string.IsNullOrEmpty(_tempFilePath) && _tempFilePath.EndsWith(TEMP_FILE_SUFFIX, StringComparison.Ordinal))
                 {
-                    if (_tempFilePath.EndsWith(TEMP_FILE_SUFFIX))
+                    string filePath = _tempFilePath.Substring(0, _tempFilePath.Length - TEMP_FILE_SUFFIX.Length);
+
+                    if (File.Exists(_tempFilePath))
                     {
-                        string filePath = _tempFilePath.Substring(0, _tempFilePath.Length - TEMP_FILE_SUFFIX.Length);
-                        if (File.Exists(_tempFilePath))
+                        try
+                        {
+                            if (File.Exists(filePath))
+                                File.Delete(filePath);
+
+                            File.Move(_tempFilePath, filePath);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError($"Failed to move downloaded file from '{_tempFilePath}' to '{filePath}': {e.Message}");
+                            _status = BackgroundDownloadStatus.Failed;
+                            _error = e.Message;
+                            return;
+                        }
+                    }
+                    else if (!File.Exists(filePath))
+                    {
+                        // Neither temp file nor final file exists.
+                        // Ask Java layer for destination URI and check that.
+                        Debug.LogWarning($"BackgroundDownloadAndroidOkHttp: temp file not found at '{_tempFilePath}'. Checking Java-side destination.");
+
+                        string destUri = null;
+                        try
+                        {
+                            destUri = _download.Call<string>("getDestinationUri");
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError($"BackgroundDownloadAndroidOkHttp: failed to query destination URI: {e.Message}");
+                        }
+
+                        string destLocalPath = destUri;
+                        if (!string.IsNullOrEmpty(destUri) && destUri.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
                         {
                             try
                             {
-                                if (File.Exists(filePath))
-                                    File.Delete(filePath);
-                                File.Move(_tempFilePath, filePath);
+                                destLocalPath = new Uri(destUri).LocalPath;
                             }
-                            catch (Exception e)
+                            catch
                             {
-                                Debug.LogError(string.Format("Failed to move downloaded file from '{0}' to '{1}': {2}", _tempFilePath, filePath, e.Message));
-                                _status = BackgroundDownloadStatus.Failed;
-                                _error = e.Message;
-                                return;
+                                destLocalPath = destUri.Replace("file://", "");
                             }
                         }
-                        else if (!File.Exists(filePath))
-                        {
-                            // Neither the temp file nor the final file exists.
-                            // Ask the Java layer for the actual destination URI and check that.
-                            Debug.LogWarning(string.Format("BackgroundDownloadAndroidOkHttp: temp file not found at '{0}'. Checking Java-side destination.", _tempFilePath));
-                            string destUri = _download.Call<string>("getDestinationUri");
-                            if (destUri != null && destUri.StartsWith("file://"))
-                                destUri = destUri.Substring(7);
-                            if (destUri == null || !File.Exists(destUri))
-                            {
-                                Debug.LogError(string.Format("BackgroundDownloadAndroidOkHttp: downloaded file not found at '{0}' or '{1}'.", _tempFilePath, filePath));
-                                _status = BackgroundDownloadStatus.Failed;
-                                _error = "Downloaded file not found after completion.";
-                                return;
-                            }
-                            // else: Java already moved the file to destUri — treat as success.
-                        }
-                        // else: temp file not present but final file already exists — already moved.
-                    }
 
-                    _status = BackgroundDownloadStatus.Done;
+                        bool existsAtDest = !string.IsNullOrEmpty(destLocalPath) && File.Exists(destLocalPath);
+                        if (!existsAtDest)
+                        {
+                            Debug.LogError($"BackgroundDownloadAndroidOkHttp: downloaded file not found at '{_tempFilePath}', '{filePath}', or '{destLocalPath}'.");
+                            _status = BackgroundDownloadStatus.Failed;
+                            _error = "Downloaded file not found after completion.";
+                            return;
+                        }
+
+                        // Java already moved it to destination path.
+                    }
+                    // else: temp not present but final exists => already moved.
                 }
-                else if (status < 0)
-                {
-                    _status = BackgroundDownloadStatus.Failed;
-                    _error = GetError();
-                }
+
+                _status = BackgroundDownloadStatus.Done;
+            }
+            else if (status < 0)
+            {
+                _status = BackgroundDownloadStatus.Failed;
+                _error = GetError();
+                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Download failed. id={_id}, filePath={_config.filePath}, error={_error}");
             }
         }
 
         /// <summary>Asks the Java layer to cancel and remove this download.</summary>
         void RemoveDownload()
         {
-            _download.Call("remove");
+            if (_download == null)
+                return;
+
+            try
+            {
+                _download.Call("remove");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] remove failed: {e.Message}");
+            }
         }
 
         // ------------------------------------------------------------------ //
@@ -319,7 +425,16 @@ namespace Unity.Networking
         protected override float GetProgress()
         {
             CheckFinished();
-            return _download.Call<float>("getProgress");
+
+            try
+            {
+                return _download != null ? _download.Call<float>("getProgress") : 0f;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] getProgress failed: {e.Message}");
+                return 0f;
+            }
         }
 
         /// <summary>
@@ -333,7 +448,16 @@ namespace Unity.Networking
         protected override long GetBytesDownloaded()
         {
             CheckFinished();
-            return _download.Call<long>("getBytesDownloaded");
+
+            try
+            {
+                return _download != null ? _download.Call<long>("getBytesDownloaded") : 0L;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] getBytesDownloaded failed: {e.Message}");
+                return (_status == BackgroundDownloadStatus.Failed) ? -1L : 0L;
+            }
         }
 
         /// <summary>
@@ -363,16 +487,24 @@ namespace Unity.Networking
         {
             var downloads = new Dictionary<string, BackgroundDownload>();
             var file = Path.Combine(Application.persistentDataPath, "unity_background_downloads.dl");
+
             if (File.Exists(file))
             {
                 foreach (var line in File.ReadAllLines(file))
-                    if (!string.IsNullOrEmpty(line))
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    if (!long.TryParse(line, out long id))
                     {
-                        long id = long.Parse(line);
-                        var dl = Recreate(id);
-                        if (dl != null)
-                            downloads[dl.config.filePath] = dl;
+                        Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] invalid download id line: '{line}'");
+                        continue;
                     }
+
+                    var dl = Recreate(id);
+                    if (dl != null)
+                        downloads[dl.config.filePath] = dl;
+                }
             }
 
             // Some loads might have failed; save the actual state.
@@ -389,19 +521,23 @@ namespace Unity.Networking
         internal static void SaveDownloads(Dictionary<string, BackgroundDownload> downloads)
         {
             var file = Path.Combine(Application.persistentDataPath, "unity_background_downloads.dl");
+
             if (downloads.Count > 0)
             {
                 var ids = new string[downloads.Count];
                 int i = 0;
                 foreach (var dl in downloads)
                     ids[i++] = ((BackgroundDownloadAndroidOkHttp)dl.Value)._id.ToString();
+
                 File.WriteAllLines(file, ids);
             }
             else if (File.Exists(file))
+            {
                 File.Delete(file);
+            }
         }
     }
 }
 
 #endif
-
+#endif
