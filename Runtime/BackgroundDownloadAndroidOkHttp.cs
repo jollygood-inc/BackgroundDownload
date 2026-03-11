@@ -310,10 +310,8 @@ namespace Unity.Networking
                     {
                         try
                         {
-                            if (File.Exists(filePath))
-                                File.Delete(filePath);
-
-                            File.Move(_tempFilePath, filePath);
+                             File.Copy(_tempFilePath, filePath, true);
+                             File.Delete(_tempFilePath);
                         }
                         catch (Exception e)
                         {
