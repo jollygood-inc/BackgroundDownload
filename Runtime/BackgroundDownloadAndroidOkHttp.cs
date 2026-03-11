@@ -96,8 +96,6 @@ namespace Unity.Networking
 
             try
             {
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
                 if (File.Exists(_tempFilePath))
                     File.Delete(_tempFilePath);
 
@@ -110,10 +108,7 @@ namespace Unity.Networking
                     Debug.Log($"[BackgroundDownloadAndroidOkHttp] Ensure directory: {dir}, exists={Directory.Exists(dir)}");
                 }
 
-                // IMPORTANT:
-                // Build file URI safely. Using Uri.AbsoluteUri avoids malformed "file://" prefixes.
-                string normalizedTempPath = _tempFilePath.Replace("\\", "/");
-                string fileUri = new Uri(normalizedTempPath).AbsoluteUri; // -> file:///...
+                string fileUri = new Uri(Path.GetFullPath(_tempFilePath)).AbsoluteUri;
 
                 bool allowMetered = false;
                 bool allowRoaming = false;
