@@ -141,6 +141,8 @@ public class BackgroundDownloadOkHttp {
     // -------------------------------------------------------------------------
 
     public long start(Context context) {
+        downloadedSoFar.set(0);
+        
         Request.Builder builder = new Request.Builder().url(downloadUri.toString());
         for (Map.Entry<String, String> entry : requestHeaders.entrySet()) {
             builder.header(entry.getKey(), entry.getValue());
@@ -151,7 +153,6 @@ public class BackgroundDownloadOkHttp {
 
         final File destFile;
         try {
-            // ★最重要修正: URI文字列のsubstringではなく、Uri.getPath()を正として使う
             String destPath = destinationUri.getPath();
             if (destPath == null || destPath.isEmpty()) {
                 throw new IllegalStateException("Destination path is null/empty. destinationUri=" + destinationUri);
@@ -235,16 +236,25 @@ public class BackgroundDownloadOkHttp {
 
                 if (writeSuccess) {
                     // If content length is known, ensure we wrote the full payload.
-                    if (total >= 0 && downloadedSoFar.get() != total) {
-                        error  = "Downloaded size mismatch: expected " + total + " got " + downloadedSoFar.get();
-                        status = STATUS_FAILED;
-                        Log.e(TAG, "size mismatch. id=" + id + ", expected=" + total + ", got=" + downloadedSoFar.get());
-                        // Clean up partial file to allow retry.
-                        //noinspection ResultOfMethodCallIgnored
-                        destFile.delete();
-                    } else {
-                        status = STATUS_SUCCESS;
-                    }
+                        long written = downloadedSoFar.get();
+                        
+                        if (total > 0) {
+                            if (written != total) {
+                                error = "Downloaded size mismatch: expected " + total + " got " + written;
+                                status = STATUS_FAILED;
+                                destFile.delete();
+                            } else {
+                                status = STATUS_SUCCESS;
+                            }
+                        } else {
+                            if (written <= 0) {
+                                error = "Downloaded zero bytes";
+                                status = STATUS_FAILED;
+                                destFile.delete();
+                            } else {
+                                status = STATUS_SUCCESS;
+                            }
+                        }
                 } else {
                     // Clean up partial file on failure.
                     //noinspection ResultOfMethodCallIgnored
