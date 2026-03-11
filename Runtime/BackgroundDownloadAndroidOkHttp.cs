@@ -305,8 +305,6 @@ namespace Unity.Networking
                 if (!string.IsNullOrEmpty(_tempFilePath) && _tempFilePath.EndsWith(TEMP_FILE_SUFFIX, StringComparison.Ordinal))
                 {
                     string filePath = _tempFilePath.Substring(0, _tempFilePath.Length - TEMP_FILE_SUFFIX.Length);
-
-
                     bool finalized = false;
 
                     if (File.Exists(_tempFilePath))
@@ -315,7 +313,7 @@ namespace Unity.Networking
                         {
                             try
                             {
-                                // temp が無ければ、既に別プロセスで完了している可能性がある
+                                // リトライ中に別スレッドが先に移動済みの場合
                                 if (!File.Exists(_tempFilePath))
                                 {
                                     if (File.Exists(filePath))
@@ -325,27 +323,32 @@ namespace Unity.Networking
                                         break;
                                     }
 
-                                    Debug.LogError($"Temp file missing and final file not found. temp={_tempFilePath} final={filePath}");
+                                    // temp も final も存在しない（異常状態）
+                                    Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Temp file missing and final file not found. temp={_tempFilePath} final={filePath}");
                                     _status = BackgroundDownloadStatus.Failed;
                                     _error = "Downloaded file missing";
                                     return;
                                 }
 
-                                File.Copy(_tempFilePath, filePath, true);
-                                File.Delete(_tempFilePath);
+                                // File.Move はアトミックに近い操作のため Copy+Delete より安全
+                                if (File.Exists(filePath))
+                                    File.Delete(filePath);
+                                File.Move(_tempFilePath, filePath);
                                 finalized = true;
                                 break;
                             }
                             catch (IOException e)
                             {
-                                Debug.LogWarning($"Retry finalize attempt {i + 1}/10 : {e.Message}");
-                                System.Threading.Thread.Sleep(50);
+                                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] Retry finalize attempt {i + 1}/10 : {e.Message}");
+                                // NOTE: Thread.Sleep はメインスレッドをブロックするため短めに設定
+                                // ファイルロックが解けるのを少し待つ
+                                System.Threading.Thread.Sleep(30);
                             }
                         }
 
                         if (!finalized)
                         {
-                            Debug.LogError($"Failed to finalize download after retries. temp={_tempFilePath} final={filePath}");
+                            Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Failed to finalize download after retries. temp={_tempFilePath} final={filePath}");
                             _status = BackgroundDownloadStatus.Failed;
                             _error = "File finalize failed";
                             return;
