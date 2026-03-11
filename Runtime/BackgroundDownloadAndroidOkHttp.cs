@@ -94,12 +94,11 @@ namespace Unity.Networking
                 File.Delete(filePath);
             if (File.Exists(_tempFilePath))
                 File.Delete(_tempFilePath);
-            else
-            {
-                var dir = Path.GetDirectoryName(filePath);
-                if (!Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
-            }
+
+            var dir = Path.GetDirectoryName(filePath);
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+           
 
             string fileUri = "file://" + _tempFilePath;
 
