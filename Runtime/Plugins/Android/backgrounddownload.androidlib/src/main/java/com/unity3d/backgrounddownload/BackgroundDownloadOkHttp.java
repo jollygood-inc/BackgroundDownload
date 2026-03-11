@@ -6,6 +6,7 @@ import android.util.Log;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -21,6 +22,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okhttp3.ConnectionPool;
 
 /**
  * Background download implementation using OkHttp.
@@ -47,14 +49,13 @@ public class BackgroundDownloadOkHttp {
     // Static shared state
     // -------------------------------------------------------------------------
 
-    private static final OkHttpClient sharedClient = new OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(0, TimeUnit.SECONDS) // no overall deadline
-            .retryOnConnectionFailure(true)
-            .build();
-    private static final ExecutorService executor = Executors.newCachedThreadPool();
+    private static final OkHttpClient client = new OkHttpClient.Builder()
+                                 .retryOnConnectionFailure(true)
+                                 .connectionPool(new ConnectionPool(20, 10, TimeUnit.MINUTES))
+                                 .connectTimeout(30, TimeUnit.SECONDS)
+                                 .readTimeout(30, TimeUnit.SECONDS)
+                                 .writeTimeout(30, TimeUnit.SECONDS)
+                                 .build();
 
     private static final Map<Long, BackgroundDownloadOkHttp> registry = new HashMap<>();
     private static long nextId = 1;
@@ -146,7 +147,7 @@ public class BackgroundDownloadOkHttp {
         }
         Request request = builder.build();
 
-        activeCall = sharedClient.newCall(request);
+        activeCall = client.newCall(request);
 
         final File destFile;
         try {
@@ -156,12 +157,6 @@ public class BackgroundDownloadOkHttp {
                 throw new IllegalStateException("Destination path is null/empty. destinationUri=" + destinationUri);
             }
             destFile = new File(destPath);
-
-            Log.d(TAG, "start id=" + id
-                    + ", url=" + downloadUri
-                    + ", destinationUri=" + destinationUri
-                    + ", destPath=" + destPath
-                    + ", abs=" + destFile.getAbsolutePath());
         } catch (Exception e) {
             error  = "Invalid destination uri: " + e.getMessage();
             status = STATUS_FAILED;
@@ -215,17 +210,21 @@ public class BackgroundDownloadOkHttp {
                         return;
                     }
 
-                    try (InputStream in = body.byteStream();
-                         FileOutputStream out = new FileOutputStream(destFile)) {
-
-                        byte[] buffer = new byte[8192];
+                try (InputStream in = body.byteStream();
+                         FileOutputStream fos = new FileOutputStream(destFile);
+                         BufferedOutputStream out = new BufferedOutputStream(fos, 131072)) {
+                    
+                        byte[] buffer = new byte[131072];
                         int read;
+                    
                         while ((read = in.read(buffer)) != -1) {
                             out.write(buffer, 0, read);
                             downloadedSoFar.addAndGet(read);
                         }
+                    
                         out.flush();
-                        out.getFD().sync();
+                        fos.getFD().sync();
+                    
                         writeSuccess = true;
                     }
                 } catch (IOException e) {
@@ -245,10 +244,6 @@ public class BackgroundDownloadOkHttp {
                         destFile.delete();
                     } else {
                         status = STATUS_SUCCESS;
-                        Log.d(TAG, "download success. id=" + id
-                                + ", exists=" + destFile.exists()
-                                + ", length=" + (destFile.exists() ? destFile.length() : -1)
-                                + ", path=" + destFile.getAbsolutePath());
                     }
                 } else {
                     // Clean up partial file on failure.
