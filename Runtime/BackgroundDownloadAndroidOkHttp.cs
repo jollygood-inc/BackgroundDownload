@@ -1,4 +1,4 @@
-#if true//UNITY_ANDROID
+#if UNITY_ANDROID
 
 using System;
 using System.Collections.Generic;
@@ -8,21 +8,21 @@ using UnityEngine;
 namespace Unity.Networking
 {
     /// <summary>
-    /// Android implementation of BackgroundDownload using OkHttp via the
-    /// BackgroundDownloadOkHttp Java class. Provides the same behaviour as
-    /// BackgroundDownloadAndroid (DownloadManager-based) but uses OkHttp for
-    /// HTTP communication, enabling real-time progress and byte-count tracking.
+    /// OkHttp を使用した Android 向け BackgroundDownload の実装。
+    /// DownloadManager ベースの BackgroundDownloadAndroid と同じインターフェースを提供しますが、
+    /// OkHttp を HTTP 通信に使用することで、リアルタイムの進捗追跡やバイト数取得が可能です。
     /// </summary>
     class BackgroundDownloadAndroidOkHttp : BackgroundDownload
     {
         private const string TEMP_FILE_SUFFIX = ".part";
+        private const string TAG = "BackgroundDownloadAndroidOkHttp";
 
         static AndroidJavaClass _playerClass;
         static AndroidJavaClass _backgroundDownloadClass;
 
         /// <summary>
-        /// Proxy that receives the download-completed callback from Java and
-        /// triggers a status check on all active downloads.
+        /// Java からのダウンロード完了コールバックを受け取り、
+        /// アクティブなすべてのダウンロードに対してステータスチェックをトリガーするプロキシ。
         /// </summary>
         class Callback : AndroidJavaProxy
         {
@@ -51,8 +51,8 @@ namespace Unity.Networking
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Initialises the static Java class references and the completion callback
-        /// on first use. Safe to call multiple times.
+        /// 初回使用時に静的な Java クラス参照と完了コールバックを初期化します。
+        /// 複数回呼び出しても安全です。
         /// </summary>
         static void SetupBackendStatics()
         {
@@ -63,12 +63,9 @@ namespace Unity.Networking
             {
                 _finishedCallback = new Callback();
 
-                // Register with CompletionReceiver for DownloadManager broadcast compatibility.
                 var receiver = new AndroidJavaClass("com.unity3d.backgrounddownload.CompletionReceiver");
                 receiver.CallStatic("setCallback", _finishedCallback);
 
-                // Also register directly with BackgroundDownloadOkHttp so OkHttp completions
-                // trigger CheckFinished() without relying on the DownloadManager broadcast.
                 _backgroundDownloadClass.CallStatic("setCompletionCallback", _finishedCallback);
             }
 
@@ -81,11 +78,10 @@ namespace Unity.Networking
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Starts a new download described by <paramref name="config"/>.
-        /// Creates a temporary <c>.part</c> file that is renamed to the final
-        /// destination once the download completes successfully.
+        /// <paramref name="config"/> に基づいて新しいダウンロードを開始します。
+        /// ダウンロード完了後に最終パスへリネームされる一時 <c>.part</c> ファイルを作成します。
         /// </summary>
-        /// <param name="config">Download configuration including URL, destination path, policy, and headers.</param>
+        /// <param name="config">URL・保存先パス・ポリシー・ヘッダーを含むダウンロード設定。</param>
         internal BackgroundDownloadAndroidOkHttp(BackgroundDownloadConfig config)
             : base(config)
         {
@@ -105,7 +101,7 @@ namespace Unity.Networking
 
                 if (!string.IsNullOrEmpty(dir))
                 {
-                    Debug.Log($"[BackgroundDownloadAndroidOkHttp] Ensure directory: {dir}, exists={Directory.Exists(dir)}");
+                    BackgroundDownloadLog.Log($"[{TAG}] Ensure directory: {dir}, exists={Directory.Exists(dir)}");
                 }
 
                 string fileUri = new Uri(Path.GetFullPath(_tempFilePath)).AbsoluteUri;
@@ -144,22 +140,22 @@ namespace Unity.Networking
                 var activity = _playerClass.GetStatic<AndroidJavaObject>("currentActivity");
                 _id = _download.Call<long>("start", activity);
 
-                Debug.Log($"[BackgroundDownloadAndroidOkHttp] start id={_id}, url={config.url.AbsoluteUri}, temp={_tempFilePath}, fileUri={fileUri}");
+                BackgroundDownloadLog.Log($"[{TAG}] start id={_id}, url={config.url.AbsoluteUri}, temp={_tempFilePath}, fileUri={fileUri}");
             }
             catch (Exception e)
             {
                 _status = BackgroundDownloadStatus.Failed;
                 _error = $"Failed to start download: {e.Message}";
-                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] {_error}\n{e}");
+                BackgroundDownloadLog.Error($"[{TAG}] {_error}\n{e}");
             }
         }
 
         /// <summary>
-        /// Restores an existing download from a previously persisted ID.
-        /// Used internally by <see cref="LoadDownloads"/>.
+        /// 以前に永続化された ID から既存のダウンロードを復元します。
+        /// <see cref="LoadDownloads"/> から内部的に使用されます。
         /// </summary>
-        /// <param name="id">The download ID returned by a previous <c>start</c> call.</param>
-        /// <param name="download">The Java-side download object retrieved via <c>recreate</c>.</param>
+        /// <param name="id">以前の <c>start</c> 呼び出しが返したダウンロード ID。</param>
+        /// <param name="download"><c>recreate</c> で取得した Java 側のダウンロードオブジェクト。</param>
         BackgroundDownloadAndroidOkHttp(long id, AndroidJavaObject download)
         {
             _id = id;
@@ -174,13 +170,12 @@ namespace Unity.Networking
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Attempts to recreate a download from a previously saved ID by
-        /// calling into the Java layer.
+        /// Java レイヤーを呼び出して、以前に保存した ID からダウンロードを再構築しようとします。
         /// </summary>
-        /// <param name="id">Persisted download ID.</param>
+        /// <param name="id">永続化されたダウンロード ID。</param>
         /// <returns>
-        /// A reconstructed <see cref="BackgroundDownloadAndroidOkHttp"/> instance,
-        /// or <c>null</c> if the Java layer no longer knows about this ID.
+        /// 再構築された <see cref="BackgroundDownloadAndroidOkHttp"/> インスタンス。
+        /// Java レイヤーがこの ID を認識しない場合は <c>null</c>。
         /// </returns>
         static BackgroundDownloadAndroidOkHttp Recreate(long id)
         {
@@ -194,14 +189,14 @@ namespace Unity.Networking
             }
             catch (Exception e)
             {
-                Debug.LogError($"Failed to recreate background download with id {id}: {e.Message}");
+                BackgroundDownloadLog.Error($"[{TAG}] Failed to recreate background download with id {id}: {e.Message}");
             }
 
             return null;
         }
 
         /// <summary>
-        /// Reads the original download URL back from the Java layer.
+        /// Java レイヤーから元のダウンロード URL を読み取ります。
         /// </summary>
         Uri QueryDownloadUri()
         {
@@ -209,19 +204,15 @@ namespace Unity.Networking
         }
 
         /// <summary>
-        /// Derives the C# relative file path and the absolute temp file path
-        /// from the destination URI stored in the Java layer.
+        /// Javaレイヤーから保存先URIを取得し、C#側の相対パスと.tempファイルの絶対パスを導出します。
         /// </summary>
-        /// <param name="tempFilePath">
-        /// Output: the absolute path of the <c>.part</c> temp file.
-        /// </param>
-        /// <returns>The relative destination path (key used in <c>_downloads</c>).</returns>
+        /// <param name="tempFilePath">出力: .part一時ファイルの絶対パス</param>
+        /// <returns>保存先の相対パス（_downloadsのキー）</returns>
         string QueryDestinationPath(out string tempFilePath)
         {
             string destination = _download.Call<string>("getDestinationUri");
             string localPath = destination;
 
-            // Robust URI -> local path conversion
             if (!string.IsNullOrEmpty(destination) && destination.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
             {
                 try
@@ -240,7 +231,6 @@ namespace Unity.Networking
             int pos = localPath.IndexOf(basePath, StringComparison.Ordinal);
             if (pos < 0)
             {
-                // Fallback: unknown layout, return basename-ish path.
                 tempFilePath = localPath;
                 string fileName = Path.GetFileName(localPath);
                 if (fileName.EndsWith(TEMP_FILE_SUFFIX, StringComparison.Ordinal))
@@ -262,9 +252,9 @@ namespace Unity.Networking
         }
 
         /// <summary>
-        /// Retrieves the error message from the Java layer when a download fails.
+        /// Javaレイヤーからダウンロード失敗時のエラーメッセージを取得します。
         /// </summary>
-        /// <returns>Human-readable error string, or <c>null</c> if no error.</returns>
+        /// <returns>人間が読めるエラー文字列。エラーがなければnull。</returns>
         string GetError()
         {
             try
@@ -278,9 +268,8 @@ namespace Unity.Networking
         }
 
         /// <summary>
-        /// Polls the Java layer for completion status and updates
-        /// <see cref="BackgroundDownload._status"/> accordingly.
-        /// On success the temporary <c>.part</c> file is renamed to the final path.
+        /// Javaレイヤーに完了状態を問い合わせ、_statusを更新します。
+        /// 成功時は.tempファイルを最終パスにリネームします。
         /// </summary>
         void CheckFinished()
         {
@@ -296,7 +285,7 @@ namespace Unity.Networking
             {
                 _status = BackgroundDownloadStatus.Failed;
                 _error = $"checkFinished exception: {e.Message}";
-                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] {_error}\n{e}");
+                BackgroundDownloadLog.Error($"[{TAG}] {_error}\n{e}");
                 return;
             }
 
@@ -324,7 +313,7 @@ namespace Unity.Networking
                                     }
 
                                     // temp も final も存在しない（異常状態）
-                                    Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Temp file missing and final file not found. temp={_tempFilePath} final={filePath}");
+                                    BackgroundDownloadLog.Error($"[{TAG}] Temp file missing and final file not found. temp={_tempFilePath} final={filePath}");
                                     _status = BackgroundDownloadStatus.Failed;
                                     _error = "Downloaded file missing";
                                     return;
@@ -339,7 +328,7 @@ namespace Unity.Networking
                             }
                             catch (IOException e)
                             {
-                                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] Retry finalize attempt {i + 1}/10 : {e.Message}");
+                                BackgroundDownloadLog.Warn($"[{TAG}] Retry finalize attempt {i + 1}/10 : {e.Message}");
                                 // NOTE: Thread.Sleep はメインスレッドをブロックするため短めに設定
                                 // ファイルロックが解けるのを少し待つ
                                 System.Threading.Thread.Sleep(30);
@@ -348,7 +337,7 @@ namespace Unity.Networking
 
                         if (!finalized)
                         {
-                            Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Failed to finalize download after retries. temp={_tempFilePath} final={filePath}");
+                            BackgroundDownloadLog.Error($"[{TAG}] Failed to finalize download after retries. temp={_tempFilePath} final={filePath}");
                             _status = BackgroundDownloadStatus.Failed;
                             _error = "File finalize failed";
                             return;
@@ -356,9 +345,7 @@ namespace Unity.Networking
                     }
                     else if (!File.Exists(filePath))
                     {
-                        // Neither temp file nor final file exists.
-                        // Ask Java layer for destination URI and check that.
-                        Debug.LogWarning($"BackgroundDownloadAndroidOkHttp: temp file not found at '{_tempFilePath}'. Checking Java-side destination.");
+                        BackgroundDownloadLog.Warn($"[{TAG}] temp file not found at '{_tempFilePath}'. Checking Java-side destination.");
 
                         string destUri = null;
                         try
@@ -367,7 +354,7 @@ namespace Unity.Networking
                         }
                         catch (Exception e)
                         {
-                            Debug.LogError($"BackgroundDownloadAndroidOkHttp: failed to query destination URI: {e.Message}");
+                            BackgroundDownloadLog.Error($"[{TAG}] failed to query destination URI: {e.Message}");
                         }
 
                         string destLocalPath = destUri;
@@ -386,15 +373,12 @@ namespace Unity.Networking
                         bool existsAtDest = !string.IsNullOrEmpty(destLocalPath) && File.Exists(destLocalPath);
                         if (!existsAtDest)
                         {
-                            Debug.LogError($"BackgroundDownloadAndroidOkHttp: downloaded file not found at '{_tempFilePath}', '{filePath}', or '{destLocalPath}'.");
+                            BackgroundDownloadLog.Error($"[{TAG}] downloaded file not found at '{_tempFilePath}', '{filePath}', or '{destLocalPath}'.");
                             _status = BackgroundDownloadStatus.Failed;
                             _error = "Downloaded file not found after completion.";
                             return;
                         }
-
-                        // Java already moved it to destination path.
                     }
-                    // else: temp not present but final exists => already moved.
                 }
 
                 _status = BackgroundDownloadStatus.Done;
@@ -403,11 +387,13 @@ namespace Unity.Networking
             {
                 _status = BackgroundDownloadStatus.Failed;
                 _error = GetError();
-                Debug.LogError($"[BackgroundDownloadAndroidOkHttp] Download failed. id={_id}, filePath={_config.filePath}, error={_error}");
+                BackgroundDownloadLog.Error($"[{TAG}] Download failed. id={_id}, filePath={_config.filePath}, error={_error}");
             }
         }
 
-        /// <summary>Asks the Java layer to cancel and remove this download.</summary>
+        /// <summary>
+        /// Javaレイヤーにこのダウンロードのキャンセル・削除を依頼します。
+        /// </summary>
         void RemoveDownload()
         {
             if (_download == null)
@@ -419,19 +405,17 @@ namespace Unity.Networking
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] remove failed: {e.Message}");
+                BackgroundDownloadLog.Warn($"[{TAG}] remove failed: {e.Message}");
             }
         }
 
         // ------------------------------------------------------------------ //
-        // BackgroundDownload overrides
+        // BackgroundDownloadのオーバーライド
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Returns <c>true</c> while the download is still in progress, allowing
-        /// this object to be yielded inside a coroutine.
-        /// Also polls the Java layer for completion status on every call so that
-        /// the download finishes even if the CompletionReceiver callback is missed.
+        /// ダウンロードが進行中の間trueを返します。
+        /// コルーチン内でyieldできるようにしつつ、毎回Javaレイヤーの完了状態も確認します。
         /// </summary>
         public override bool keepWaiting
         {
@@ -443,10 +427,8 @@ namespace Unity.Networking
         }
 
         /// <summary>
-        /// Returns the download progress in the range [0, 1].
-        /// Returns a negative value when the total size is not yet known.
-        /// Also polls the Java layer for completion so status stays current
-        /// even when called outside a coroutine.
+        /// ダウンロード進捗を[0,1]で返します。サイズ不明時は負値。
+        /// Javaレイヤーの完了状態も毎回確認します。
         /// </summary>
         protected override float GetProgress()
         {
@@ -458,18 +440,15 @@ namespace Unity.Networking
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] getProgress failed: {e.Message}");
+                BackgroundDownloadLog.Warn($"[{TAG}] getProgress failed: {e.Message}");
                 return 0f;
             }
         }
 
         /// <summary>
-        /// Returns the number of bytes downloaded so far.
-        /// Delegates to <c>BackgroundDownloadOkHttp.getBytesDownloaded()</c> which
-        /// uses an <c>AtomicLong</c> updated on every OkHttp response body read.
-        /// Returns <c>-1</c> if the download has failed, <c>0</c> if not yet started.
-        /// Also polls the Java layer for completion so status stays current
-        /// even when called outside a coroutine.
+        /// 現在までにダウンロード済みのバイト数を返します。
+        /// JavaのBackgroundDownloadOkHttp.getBytesDownloaded()に委譲。
+        /// 失敗時は-1、未開始時は0。
         /// </summary>
         protected override long GetBytesDownloaded()
         {
@@ -481,13 +460,13 @@ namespace Unity.Networking
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] getBytesDownloaded failed: {e.Message}");
+                BackgroundDownloadLog.Warn($"[{TAG}] getBytesDownloaded failed: {e.Message}");
                 return (_status == BackgroundDownloadStatus.Failed) ? -1L : 0L;
             }
         }
 
         /// <summary>
-        /// Cancels the download (if in progress) and removes it from the active set.
+        /// ダウンロードをキャンセルし、アクティブセットから削除します。
         /// </summary>
         public override void Dispose()
         {
@@ -496,19 +475,14 @@ namespace Unity.Networking
         }
 
         // ------------------------------------------------------------------ //
-        // Persistence
+        // 永続化
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Loads the persisted download IDs from disk and attempts to recreate
-        /// each corresponding <see cref="BackgroundDownloadAndroidOkHttp"/> instance.
-        /// Called once per session by the base class on first access to
-        /// <see cref="BackgroundDownload.backgroundDownloads"/>.
+        /// 永続化されたダウンロードIDをディスクから読み出し、
+        /// 各BackgroundDownloadAndroidOkHttpインスタンスを復元します。
         /// </summary>
-        /// <returns>
-        /// A dictionary keyed by relative destination file path containing all
-        /// successfully recreated downloads.
-        /// </returns>
+        /// <returns>復元に成功したダウンロードの辞書（キーは保存先相対パス）</returns>
         internal static Dictionary<string, BackgroundDownload> LoadDownloads()
         {
             var downloads = new Dictionary<string, BackgroundDownload>();
@@ -523,7 +497,7 @@ namespace Unity.Networking
 
                     if (!long.TryParse(line, out long id))
                     {
-                        Debug.LogWarning($"[BackgroundDownloadAndroidOkHttp] invalid download id line: '{line}'");
+                        BackgroundDownloadLog.Warn($"[{TAG}] invalid download id line: '{line}'");
                         continue;
                     }
 
@@ -539,11 +513,10 @@ namespace Unity.Networking
         }
 
         /// <summary>
-        /// Persists the IDs of all active downloads to disk so they can be
-        /// restored in a subsequent app session via <see cref="LoadDownloads"/>.
-        /// Deletes the persistence file when there are no active downloads.
+        /// アクティブな全ダウンロードのIDをディスクに保存します。
+        /// ダウンロードがなければ永続化ファイルを削除します。
         /// </summary>
-        /// <param name="downloads">The current set of active downloads.</param>
+        /// <param name="downloads">現在のアクティブダウンロード集合</param>
         internal static void SaveDownloads(Dictionary<string, BackgroundDownload> downloads)
         {
             var file = Path.Combine(Application.persistentDataPath, "unity_background_downloads.dl");
