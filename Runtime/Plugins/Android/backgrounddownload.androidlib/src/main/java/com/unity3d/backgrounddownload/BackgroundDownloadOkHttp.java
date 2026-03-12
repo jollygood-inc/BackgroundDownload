@@ -211,21 +211,21 @@ public class BackgroundDownloadOkHttp {
                         return;
                     }
 
-                try (InputStream in = body.byteStream();
+                    try (InputStream in = body.byteStream();
                          FileOutputStream fos = new FileOutputStream(destFile);
                          BufferedOutputStream out = new BufferedOutputStream(fos, 131072)) {
-                    
+
                         byte[] buffer = new byte[131072];
                         int read;
-                    
+
                         while ((read = in.read(buffer)) != -1) {
                             out.write(buffer, 0, read);
                             downloadedSoFar.addAndGet(read);
                         }
-                    
+
                         out.flush();
                         fos.getFD().sync();
-                    
+
                         writeSuccess = true;
                     }
                 } catch (IOException e) {
@@ -236,25 +236,25 @@ public class BackgroundDownloadOkHttp {
 
                 if (writeSuccess) {
                     // If content length is known, ensure we wrote the full payload.
-                        long written = downloadedSoFar.get();
-                        
-                        if (total > 0) {
-                            if (written != total) {
-                                error = "Downloaded size mismatch: expected " + total + " got " + written;
-                                status = STATUS_FAILED;
-                                destFile.delete();
-                            } else {
-                                status = STATUS_SUCCESS;
-                            }
+                    long written = downloadedSoFar.get();
+
+                    if (total > 0) {
+                        if (written != total) {
+                            error = "Downloaded size mismatch: expected " + total + " got " + written;
+                            status = STATUS_FAILED;
+                            destFile.delete();
                         } else {
-                            if (written <= 0) {
-                                error = "Downloaded zero bytes";
-                                status = STATUS_FAILED;
-                                destFile.delete();
-                            } else {
-                                status = STATUS_SUCCESS;
-                            }
+                            status = STATUS_SUCCESS;
                         }
+                    } else {
+                        if (written <= 0) {
+                            error = "Downloaded zero bytes";
+                            status = STATUS_FAILED;
+                            destFile.delete();
+                        } else {
+                            status = STATUS_SUCCESS;
+                        }
+                    }
                 } else {
                     // Clean up partial file on failure.
                     //noinspection ResultOfMethodCallIgnored
