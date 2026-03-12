@@ -104,6 +104,21 @@ public class BackgroundDownloadOkHttp {
         }
     }
 
+    /**
+     * 実行中のプロセス内で以前に開始したダウンロードを ID で再取得します。
+     *
+     * <p><b>注意:</b> registry はインメモリの {@link HashMap} であるため、
+     * プロセスが再起動されると内容は失われます。
+     * その場合、このメソッドは常に {@code null} を返します。
+     * DownloadManager ベースの実装とは異なり、OkHttp 版は
+     * プロセスをまたいだダウンロードの復元をサポートしていません。
+     * C# 側の LoadDownloads/SaveDownloads は互換性のために存在しますが、
+     * プロセス再起動後の復元には機能しません。</p>
+     *
+     * @param context Android コンテキスト（未使用、API 互換のために保持）
+     * @param id      {@link #start(Context)} が返したダウンロード ID
+     * @return 同一プロセス内であれば対応するインスタンス、プロセス再起動後は {@code null}
+     */
     public static BackgroundDownloadOkHttp recreate(Context context, long id) {
         synchronized (registry) {
             return registry.get(id);

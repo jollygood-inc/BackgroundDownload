@@ -481,8 +481,15 @@ namespace Unity.Networking
         /// <summary>
         /// 永続化されたダウンロードIDをディスクから読み出し、
         /// 各BackgroundDownloadAndroidOkHttpインスタンスを復元します。
+        /// <para>
+        /// <b>注意:</b> OkHttp版のJavaレイヤーはインメモリのHashMapで管理しているため、
+        /// プロセスが再起動されるとregistryの内容は失われます。
+        /// そのため、プロセス再起動後はすべての復元が失敗し空の辞書が返ります。
+        /// DownloadManagerベースの実装とは異なり、OkHttp版は
+        /// プロセスをまたいだダウンロードの復元をサポートしていません。
+        /// </para>
         /// </summary>
-        /// <returns>復元に成功したダウンロードの辞書（キーは保存先相対パス）</returns>
+        /// <returns>復元に成功したダウンロードの辞書（キーは保存先相対パス）。プロセス再起動後は常に空。</returns>
         internal static Dictionary<string, BackgroundDownload> LoadDownloads()
         {
             var downloads = new Dictionary<string, BackgroundDownload>();
@@ -504,10 +511,13 @@ namespace Unity.Networking
                     var dl = Recreate(id);
                     if (dl != null)
                         downloads[dl.config.filePath] = dl;
+                    else
+                        // OkHttp版はプロセス再起動後にregistryが失われるため復元不可
+                        BackgroundDownloadLog.Warn($"[{TAG}] Could not recreate download id={id}. OkHttp registry is in-memory and does not survive process restart.");
                 }
             }
 
-            // Some loads might have failed; save the actual state.
+            // 復元できなかったものを除外した状態で保存しなおす
             SaveDownloads(downloads);
             return downloads;
         }
@@ -515,6 +525,11 @@ namespace Unity.Networking
         /// <summary>
         /// アクティブな全ダウンロードのIDをディスクに保存します。
         /// ダウンロードがなければ永続化ファイルを削除します。
+        /// <para>
+        /// <b>注意:</b> OkHttp版のJavaレイヤーはインメモリのHashMapで管理しているため、
+        /// ここで保存したIDはプロセス再起動後に<see cref="LoadDownloads"/>で読み出しても
+        /// 復元できません。このメソッドはDownloadManagerベース実装との互換性のために残しています。
+        /// </para>
         /// </summary>
         /// <param name="downloads">現在のアクティブダウンロード集合</param>
         internal static void SaveDownloads(Dictionary<string, BackgroundDownload> downloads)
