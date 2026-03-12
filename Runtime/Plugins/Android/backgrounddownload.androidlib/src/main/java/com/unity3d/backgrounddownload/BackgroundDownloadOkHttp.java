@@ -432,7 +432,7 @@ public class BackgroundDownloadOkHttp {
      */
     public void remove() {
         if (status == STATUS_RUNNING) {
-            error  = "中断されました";
+            error  = "Aborted";
             status = STATUS_FAILED;
             Call call = activeCall;
             if (call != null) {
