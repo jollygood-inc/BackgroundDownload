@@ -363,8 +363,7 @@ public class BackgroundDownloadOkHttp {
             try {
                 cb.downloadCompleted();
             } catch (Exception e) {
-                // C# 側がすでに破棄されている場合は無視する
-                completionCallback = null;
+                Log.e(TAG, "Error while executing completion callback", e);
             }
         }
     }
