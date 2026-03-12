@@ -274,7 +274,7 @@ public class BackgroundDownloadOkHttp {
             try {
                 cb.downloadCompleted();
             } catch (Exception e) {
-                completionCallback = null;
+                Log.e(TAG, "Error while executing completion callback", e);
             }
         }
     }
