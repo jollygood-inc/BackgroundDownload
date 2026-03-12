@@ -1,6 +1,9 @@
 package com.unity3d.backgrounddownload;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.util.Log;
 
@@ -229,13 +232,23 @@ public class BackgroundDownloadOkHttp {
             // destinationUri.getPath() を使って確実に絶対パスを取得する。
             String destPath = destinationUri.getPath();
             if (destPath == null || destPath.isEmpty()) {
-                throw new IllegalStateException("保存先パスが null または空です。 destinationUri=" + destinationUri);
+                throw new IllegalStateException("Destination path is null or empty. destinationUri=" + destinationUri);
             }
             destFile = new File(destPath);
         } catch (Exception e) {
-            error  = "無効な保存先 URI: " + e.getMessage();
+            error  = "Invalid destination URI: " + e.getMessage();
             status = STATUS_FAILED;
             Log.e(TAG, "Failed to resolve destination path before enqueue. id=" + id + ", destinationUri=" + destinationUri, e);
+            notifyCompletion();
+            return id;
+        }
+
+        // ネットワークポリシーを確認してからリクエストをエンキューする
+        String policyError = checkNetworkPolicy(context);
+        if (policyError != null) {
+            error  = policyError;
+            status = STATUS_FAILED;
+            Log.e(TAG, "Network policy check failed. id=" + id + ", reason=" + policyError);
             notifyCompletion();
             return id;
         }
@@ -364,6 +377,53 @@ public class BackgroundDownloadOkHttp {
                 Log.e(TAG, "Error while executing completion callback.", e);
             }
         }
+    }
+
+    /**
+     * 現在のアクティブなネットワークが {@link #allowMetered} / {@link #allowRoaming}
+     * のポリシーを満たしているか確認します。
+     *
+     * <p>DownloadManager と同等のネットワーク制約を OkHttp でも実現するために使用します。
+     * ポリシー違反の場合は人間が読めるエラー文字列を返し、問題なければ {@code null} を返します。</p>
+     *
+     * @param context ネットワーク状態の取得に使用する Android コンテキスト
+     * @return ポリシー違反のエラーメッセージ、または問題なければ {@code null}
+     */
+    private String checkNetworkPolicy(Context context) {
+        ConnectivityManager cm =
+                (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) {
+            // ConnectivityManager が取得できない場合は制限しない
+            return null;
+        }
+
+        Network activeNetwork = cm.getActiveNetwork();
+        if (activeNetwork == null) {
+            return "No active network available";
+        }
+
+        NetworkCapabilities caps = cm.getNetworkCapabilities(activeNetwork);
+        if (caps == null) {
+            return "Unable to determine network capabilities";
+        }
+
+        // メーター接続チェック（モバイルデータ等）
+        // NET_CAPABILITY_NOT_METERED が無ければメーター接続
+        boolean isMetered = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+        if (isMetered && !allowMetered) {
+            return "Download not allowed on metered network";
+        }
+
+        // ローミングチェック
+        // NET_CAPABILITY_NOT_ROAMING が無ければローミング接続（API 28 以上）
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            boolean isRoaming = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
+            if (isRoaming && !allowRoaming) {
+                return "Download not allowed on roaming network";
+            }
+        }
+
+        return null;
     }
 
     /**
