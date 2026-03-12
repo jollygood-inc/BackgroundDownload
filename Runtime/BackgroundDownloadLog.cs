@@ -1,5 +1,4 @@
 //#define ENABLE_LOG // このシンボルを定義するとBackgroundDownloadのログが出力されます。
-
 using System.Diagnostics;
 using UnityEngine;
 
@@ -11,22 +10,25 @@ namespace Unity.Networking
     /// </summary>
     internal static class BackgroundDownloadLog
     {
-        [Conditional("ENABLE_LOG")]
         public static void Log(string msg)
         {
+#if ENABLE_LOG
             Debug.Log(msg);
+#endif
         }
-
-        [Conditional("ENABLE_LOG")]
+        
         public static void Warn(string msg)
         {
+#if ENABLE_LOG
             Debug.LogWarning(msg);
+#endif
         }
-
-        [Conditional("ENABLE_LOG")]
+        
         public static void Error(string msg)
         {
+#if ENABLE_LOG
             Debug.LogError(msg);
+#endif
         }
     }
 }
