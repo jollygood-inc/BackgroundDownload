@@ -235,7 +235,7 @@ public class BackgroundDownloadOkHttp {
         } catch (Exception e) {
             error  = "無効な保存先 URI: " + e.getMessage();
             status = STATUS_FAILED;
-            Log.e(TAG, "enqueue前にstart失敗。 id=" + id + ", destinationUri=" + destinationUri, e);
+            Log.e(TAG, "Failed to resolve destination path before enqueue. id=" + id + ", destinationUri=" + destinationUri, e);
             notifyCompletion();
             return id;
         }
@@ -246,9 +246,9 @@ public class BackgroundDownloadOkHttp {
             @Override
             public void onFailure(Call call, IOException e) {
                 if (!call.isCanceled()) {
-                    error  = e.getMessage() != null ? e.getMessage() : "ネットワーク障害";
+                    error  = e.getMessage() != null ? e.getMessage() : "Network failure";
                     status = STATUS_FAILED;
-                    Log.e(TAG, "ダウンロード失敗。 id=" + id + ", error=" + error, e);
+                    Log.e(TAG, "Download failed. id=" + id + ", error=" + error, e);
                     notifyCompletion();
                 }
             }
@@ -257,9 +257,9 @@ public class BackgroundDownloadOkHttp {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (!response.isSuccessful()) {
-                    error  = "HTTP エラー: " + response.code();
+                    error  = "HTTP error: " + response.code();
                     status = STATUS_FAILED;
-                    Log.e(TAG, "HTTP エラー。 id=" + id + ", code=" + response.code());
+                    Log.e(TAG, "HTTP error. id=" + id + ", code=" + response.code());
                     response.close();
                     notifyCompletion();
                     return;
@@ -269,9 +269,9 @@ public class BackgroundDownloadOkHttp {
                 long total = -1;
                 try (ResponseBody body = response.body()) {
                     if (body == null) {
-                        error  = "レスポンスボディが空です";
+                        error  = "Response body is null";
                         status = STATUS_FAILED;
-                        Log.e(TAG, "ボディが null。 id=" + id);
+                        Log.e(TAG, "Response body is null. id=" + id);
                         notifyCompletion();
                         return;
                     }
@@ -283,9 +283,9 @@ public class BackgroundDownloadOkHttp {
                     // 親ディレクトリが存在しなければ作成する
                     File parent = destFile.getParentFile();
                     if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
-                        error  = "親ディレクトリの作成に失敗: " + parent.getAbsolutePath();
+                        error  = "Failed to create parent directory: " + parent.getAbsolutePath();
                         status = STATUS_FAILED;
-                        Log.e(TAG, "mkdirs 失敗。 id=" + id + ", dir=" + parent.getAbsolutePath());
+                        Log.e(TAG, "Failed to create parent directory. id=" + id + ", dir=" + parent.getAbsolutePath());
                         notifyCompletion();
                         return;
                     }
@@ -309,9 +309,9 @@ public class BackgroundDownloadOkHttp {
                         writeSuccess = true;
                     }
                 } catch (IOException e) {
-                    error  = e.getMessage() != null ? e.getMessage() : "ファイル書き込みエラー";
+                    error  = e.getMessage() != null ? e.getMessage() : "File write error";
                     status = STATUS_FAILED;
-                    Log.e(TAG, "ファイル書き込み失敗。 id=" + id + ", path=" + destFile.getAbsolutePath(), e);
+                    Log.e(TAG, "File write failed. id=" + id + ", path=" + destFile.getAbsolutePath(), e);
                 }
 
                 if (writeSuccess) {
@@ -320,29 +320,26 @@ public class BackgroundDownloadOkHttp {
 
                     if (total > 0) {
                         if (written != total) {
-                            error  = "サイズ不一致: 期待値=" + total + " 実際=" + written;
+                            error  = "Size mismatch: expected=" + total + " actual=" + written;
                             status = STATUS_FAILED;
-                            Log.e(TAG, "サイズ不一致。 id=" + id + ", expected=" + total + ", got=" + written);
-                            //noinspection ResultOfMethodCallIgnored
+                            Log.e(TAG, "Size mismatch. id=" + id + ", expected=" + total + ", got=" + written);
                             destFile.delete();
                         } else {
                             status = STATUS_SUCCESS;
-                            Log.d(TAG, "ダウンロード成功。 id=" + id + ", path=" + destFile.getAbsolutePath());
+                            Log.d(TAG, "Download succeeded. id=" + id + ", path=" + destFile.getAbsolutePath());
                         }
                     } else {
                         if (written <= 0) {
-                            error  = "ダウンロードされたバイト数が 0 です";
+                            error  = "Downloaded zero bytes";
                             status = STATUS_FAILED;
-                            //noinspection ResultOfMethodCallIgnored
                             destFile.delete();
                         } else {
                             status = STATUS_SUCCESS;
-                            Log.d(TAG, "ダウンロード成功（サイズ不明）。 id=" + id + ", written=" + written);
+                            Log.d(TAG, "Download succeeded (unknown size). id=" + id + ", written=" + written);
                         }
                     }
                 } else {
                     // 失敗時は中途半端なファイルを削除する
-                    //noinspection ResultOfMethodCallIgnored
                     destFile.delete();
                 }
 
@@ -363,7 +360,8 @@ public class BackgroundDownloadOkHttp {
             try {
                 cb.downloadCompleted();
             } catch (Exception e) {
-                Log.e(TAG, "Error while executing completion callback", e);
+                // C# 側がすでに破棄されている場合は無視する
+                Log.e(TAG, "Error while executing completion callback.", e);
             }
         }
     }
