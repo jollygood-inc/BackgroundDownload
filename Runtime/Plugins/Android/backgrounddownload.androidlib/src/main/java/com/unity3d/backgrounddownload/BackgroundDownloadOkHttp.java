@@ -464,8 +464,11 @@ public class BackgroundDownloadOkHttp {
      * @return 進捗の割合、サイズ不明なら {@code -1.0}、完了なら {@code 1.0}
      */
     public float getProgress() {
-        if (status != STATUS_RUNNING) {
+        if (status == STATUS_SUCCESS) {
             return 1.0f;
+        }
+        if (status == STATUS_FAILED) {
+            return -1.0f;
         }
         long total = totalBytes.get();
         long done  = downloadedSoFar.get();
