@@ -3,7 +3,7 @@
 	"displayName":"Background Download",
 	"version": "1.0.0-jg.1",
 	"unity": "2020.1",
-	"description": "description": "Extended version of the original package with additional features by JG.\n\nEnable file downloads in background for mobile platforms.\nAllows to launch file downloads that will continue even if the app goes into background or gets quit by the operating system. The downloads can be picked the next time the app is started.\n\nAdditional features:\n- Android implementation using OkHttp for improved download stability and performance\n- Editor support for downloading files (play mode / development testing)\n\nSupported platforms:\n- Android\n- iOS\n- UWP",
+	"description": "Extended version of the original package with additional features by JG.\n\nEnable file downloads in background for mobile platforms.\nAllows to launch file downloads that will continue even if the app goes into background or gets quit by the operating system. The downloads can be picked the next time the app is started.\n\nAdditional features:\n- Android implementation using OkHttp for improved download stability and performance\n- Editor support for downloading files (play mode / development testing)\n\nSupported platforms:\n- Android\n- iOS\n- UWP",
 	"dependencies": {
 		"com.unity.modules.androidjni": "1.0.0"
 	}
