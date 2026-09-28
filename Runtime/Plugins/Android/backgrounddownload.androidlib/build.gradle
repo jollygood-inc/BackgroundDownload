@@ -1,7 +1,8 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 28
+    namespace "com.unity.networking.backgrounddownload"
+    compileSdkVersion 34
 
     defaultConfig {
         minSdkVersion 16
