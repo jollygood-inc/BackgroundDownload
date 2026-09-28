@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace "com.unity.networking.backgrounddownload"
+    namespace "com.unity3d.backgrounddownload"
     compileSdkVersion 34
 
     defaultConfig {
